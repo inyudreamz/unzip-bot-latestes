@@ -1140,6 +1140,7 @@ async def exec_command(_, message):
 async def process_local_files(_, message: Message):
     try:
         user_id = message.from_user.id
+        LOGGER.info(f"process_local command received from user {user_id}")
 
         # Check if user is in merge mode
         if await get_merge_task(user_id):
@@ -1172,7 +1173,9 @@ async def process_local_files(_, message: Message):
         # Get the local path from command arguments
         try:
             local_path = message.text.split(" ", maxsplit=1)[1]
+            LOGGER.info(f"Local path provided: {local_path}")
         except IndexError:
+            LOGGER.warning(f"User {user_id} did not provide a file path")
             await message.reply(
                 text="Please provide the path to your archive file.\n\nUsage: `/process_local /path/to/your/archive.zip`\n\n**Note:** This command is admin-only for security reasons."
             )
@@ -1181,6 +1184,7 @@ async def process_local_files(_, message: Message):
         # Check if the file exists
         if not os.path.exists(local_path):
             current_dir = os.getcwd()
+            LOGGER.error(f"File not found: {local_path}, current directory: {current_dir}")
             await message.reply(
                 text=f"❌ File not found at: `{local_path}`\n\nCurrent working directory: `{current_dir}`\n\nPlease check the path and try again."
             )
@@ -1237,14 +1241,18 @@ async def process_local_files(_, message: Message):
         await sleep(f.value)
         await process_local_files(_=_, message=message)
     except Exception as e:
-        await message.reply(f"❌ Error: {str(e)}")
         LOGGER.error(f"Error in process_local_files: {e}")
+        LOGGER.error(f"Error type: {type(e)}")
+        LOGGER.error("Full traceback:", exc_info=True)
+        await message.reply(f"❌ Error: {str(e)}")
 
 
 async def start_extraction_process(user_id, file_path, message, process_msg):
     """Start the extraction process for a local file"""
     import time as time_module  # Import time explicitly to avoid conflicts
     try:
+        LOGGER.info(f"Starting extraction process for user {user_id}, file: {file_path}")
+
         # Add ongoing task
         start_time = time_module.time()
         await add_ongoing_task(
@@ -1254,6 +1262,7 @@ async def start_extraction_process(user_id, file_path, message, process_msg):
         # Create extraction directory
         ext_files_dir = f"{Config.DOWNLOAD_LOCATION}/{user_id}/extracted"
         os.makedirs(name=ext_files_dir, exist_ok=True)
+        LOGGER.info(f"Created extraction directory: {ext_files_dir}")
 
         # Determine file type and extract
         file_type = None
@@ -1264,17 +1273,23 @@ async def start_extraction_process(user_id, file_path, message, process_msg):
         else:
             file_type = "normal"
 
+        LOGGER.info(f"Detected file type: {file_type} for file: {file_path}")
+
         # Extract the archive
         try:
+            LOGGER.info(f"Starting extraction with extr_files function...")
             ext_s_time = time_module.time()
             extractor = await extr_files(
                 path=ext_files_dir,
                 archive_path=file_path
             )
             ext_e_time = time_module.time()
+            LOGGER.info(f"Extraction completed successfully in {ext_e_time - ext_s_time:.2f} seconds")
         except Exception as extract_error:
-            await process_msg.edit(f"❌ Extraction failed: {str(extract_error)}")
             LOGGER.error(f"Extraction error in process_local: {extract_error}")
+            LOGGER.error(f"Error type: {type(extract_error)}")
+            LOGGER.error(f"Error traceback: ", exc_info=True)
+            await process_msg.edit(f"❌ Extraction failed: {str(extract_error)}")
             shutil.rmtree(ext_files_dir)
             shutil.rmtree(f"{Config.DOWNLOAD_LOCATION}/{user_id}")
             await del_ongoing_task(user_id)
@@ -1346,8 +1361,10 @@ async def start_extraction_process(user_id, file_path, message, process_msg):
             )
 
     except Exception as e:
-        await process_msg.edit(f"❌ Extraction error: {str(e)}")
         LOGGER.error(f"Error in start_extraction_process: {e}")
+        LOGGER.error(f"Error type: {type(e)}")
+        LOGGER.error("Full traceback in start_extraction_process:", exc_info=True)
+        await process_msg.edit(f"❌ Extraction error: {str(e)}")
         try:
             shutil.rmtree(f"{Config.DOWNLOAD_LOCATION}/{user_id}")
         except:

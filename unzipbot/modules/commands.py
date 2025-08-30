@@ -1180,8 +1180,9 @@ async def process_local_files(_, message: Message):
 
         # Check if the file exists
         if not os.path.exists(local_path):
+            current_dir = os.getcwd()
             await message.reply(
-                text=f"❌ File not found at: `{local_path}`\n\nPlease check the path and try again."
+                text=f"❌ File not found at: `{local_path}`\n\nCurrent working directory: `{current_dir}`\n\nPlease check the path and try again."
             )
             return
 
@@ -1242,9 +1243,10 @@ async def process_local_files(_, message: Message):
 
 async def start_extraction_process(user_id, file_path, message, process_msg):
     """Start the extraction process for a local file"""
+    import time as time_module  # Import time explicitly to avoid conflicts
     try:
         # Add ongoing task
-        start_time = time.time()
+        start_time = time_module.time()
         await add_ongoing_task(
             user_id=user_id, start_time=start_time, task_type="extract"
         )
@@ -1263,12 +1265,20 @@ async def start_extraction_process(user_id, file_path, message, process_msg):
             file_type = "normal"
 
         # Extract the archive
-        ext_s_time = time.time()
-        extractor = await extr_files(
-            path=ext_files_dir,
-            archive_path=file_path
-        )
-        ext_e_time = time.time()
+        try:
+            ext_s_time = time_module.time()
+            extractor = await extr_files(
+                path=ext_files_dir,
+                archive_path=file_path
+            )
+            ext_e_time = time_module.time()
+        except Exception as extract_error:
+            await process_msg.edit(f"❌ Extraction failed: {str(extract_error)}")
+            LOGGER.error(f"Extraction error in process_local: {extract_error}")
+            shutil.rmtree(ext_files_dir)
+            shutil.rmtree(f"{Config.DOWNLOAD_LOCATION}/{user_id}")
+            await del_ongoing_task(user_id)
+            return
 
         # Check for extraction errors
         if any(err in extractor for err in ERROR_MSGS):

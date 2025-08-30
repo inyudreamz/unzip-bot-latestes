@@ -46,7 +46,7 @@ from unzipbot.helpers.unzip_help import (
 from unzipbot.i18n.buttons import Buttons
 from unzipbot.i18n.messages import Messages
 from unzipbot.modules.ext_script.custom_thumbnail import add_thumb, del_thumb
-from unzipbot.modules.ext_script.ext_helper import get_files, extr_files, make_keyboard, make_keyboard_empty
+from unzipbot.modules.ext_script.ext_helper import get_files, make_keyboard, make_keyboard_empty
 
 # Regex for urls
 https_url_regex = r"((http|https)\:\/\/)?[a-zA-Z0-9\.\/\?\:@\-_=#]+\.([a-zA-Z]){2,6}([a-zA-Z0-9\.\&\/\?\:@\-_=#])*"  # noqa: E501
@@ -1251,6 +1251,9 @@ async def start_extraction_process(user_id, file_path, message, process_msg):
     """Start the extraction process for a local file"""
     import time as time_module  # Import time explicitly to avoid conflicts
     try:
+        # Import extr_files here to isolate any import issues
+        from unzipbot.modules.ext_script.ext_helper import extr_files
+        LOGGER.info(f"Successfully imported extr_files function")
         LOGGER.info(f"Starting extraction process for user {user_id}, file: {file_path}")
 
         # Add ongoing task
@@ -1278,11 +1281,17 @@ async def start_extraction_process(user_id, file_path, message, process_msg):
         # Extract the archive
         try:
             LOGGER.info(f"Starting extraction with extr_files function...")
+            LOGGER.info(f"Calling extr_files with path={ext_files_dir}, archive_path={file_path}")
             ext_s_time = time_module.time()
+
+            # Add more detailed logging before the call
+            LOGGER.info(f"About to call extr_files function...")
             extractor = await extr_files(
                 path=ext_files_dir,
                 archive_path=file_path
             )
+            LOGGER.info(f"extr_files function returned successfully")
+
             ext_e_time = time_module.time()
             LOGGER.info(f"Extraction completed successfully in {ext_e_time - ext_s_time:.2f} seconds")
         except Exception as extract_error:

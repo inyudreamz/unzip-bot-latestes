@@ -45,6 +45,7 @@ from unzipbot.i18n.buttons import Buttons
 from unzipbot.i18n.messages import Messages
 from unzipbot.modules.ext_script.custom_thumbnail import add_thumb, del_thumb
 from unzipbot.modules.ext_script.ext_helper import get_files
+from unzipbot.modules.callbacks import find_lowest_sequence_file
 
 # Regex for urls
 https_url_regex = r"((http|https)\:\/\/)?[a-zA-Z0-9\.\/\?\:@\-_=#]+\.([a-zA-Z]){2,6}([a-zA-Z0-9\.\&\/\?\:@\-_=#])*"  # noqa: E501
@@ -1132,3 +1133,52 @@ async def exec_command(_, message):
             )
     else:
         await message.reply_text(OUTPUT)
+
+
+@unzipbot_client.on_message(filters=filters.private & filters.command(commands="extract_manual"))
+async def extract_manual_files(_, message: Message):
+    try:
+        user_id = message.from_user.id
+        download_path = f"{Config.DOWNLOAD_LOCATION}/{user_id}/merge"
+        
+        # Check if merge directory exists and has files
+        if not os.path.exists(download_path):
+            await message.reply(
+                text=messages.get(
+                    file="commands", key="NO_MERGE_TASK", user_id=user_id
+                )
+            )
+            return
+            
+        try:
+            from unzipbot.modules.ext_script.ext_helper import get_files
+            files = await get_files(download_path)
+            if not files:
+                await message.reply(
+                    text=messages.get(
+                        file="commands", key="NO_MERGE_TASK", user_id=user_id
+                    )
+                )
+                return
+                
+            # Find the main archive file
+            file, file_type = find_lowest_sequence_file(files)
+            
+            # Show the user what file was found and give extraction options
+            file_name = os.path.basename(file)
+            await message.reply(
+                text=f"Found archive: `{file_name}`\nType: `{file_type}`\n\nSelect extraction mode:",
+                reply_markup=Buttons.MANUAL_EXTRACT_BTNS,
+            )
+            
+        except IndexError:
+            await message.reply(
+                text="No valid archive files found in your merge directory.\nPlease ensure you have placed the split archive files in the correct location."
+            )
+            return
+            
+    except (FloodWait, FloodPremiumWait) as f:
+        await sleep(f.value)
+        await extract_manual_files(_=_, message=message)
+    except Exception as e:
+        await message.reply(f"Error: {str(e)}")

@@ -553,6 +553,154 @@ async def unzip_cb(unzip_bot: Client, query: CallbackQuery):
             except:
                 pass
 
+    elif query.data.startswith("manual_extract"):
+        user_id = query.from_user.id
+        download_path = f"{Config.DOWNLOAD_LOCATION}/{user_id}/merge"
+        ext_files_dir = f"{Config.DOWNLOAD_LOCATION}/{user_id}/extracted"
+        os.makedirs(name=ext_files_dir, exist_ok=True)
+
+        try:
+            files = await get_files(download_path)
+            file, file_type = find_lowest_sequence_file(files)
+        except IndexError:
+            await answer_query(
+                query=query,
+                message_text="No valid archive files found in your merge directory.\nPlease ensure you have placed the split archive files in the correct location.",
+            )
+            return
+
+        split_data = query.data.split("|")
+        log_msg = await unzip_bot.send_message(
+            chat_id=Config.LOGS_CHANNEL,
+            text=f"Manual extraction request from user {user_id} for file: {os.path.basename(file)}",
+        )
+
+        try:
+            await query.message.edit(
+                text=messages.get(file="callbacks", key="PROCESSING_TASK", user_id=uid)
+            )
+        except:
+            pass
+
+        if split_data[1] == "with_pass":
+            password = await unzip_bot.ask(
+                chat_id=query.message.chat.id,
+                text=messages.get(
+                    file="callbacks", key="PLS_SEND_PASSWORD", user_id=uid
+                ),
+            )
+            ext_s_time = time()
+            extractor = await merge_files(
+                iinput=file,
+                ooutput=ext_files_dir,
+                file_type=file_type,
+                password=password.text,
+            )
+            ext_e_time = time()
+        else:
+            # Can't test the archive apparently
+            ext_s_time = time()
+            extractor = await merge_files(
+                iinput=file, ooutput=ext_files_dir, file_type=file_type
+            )
+            ext_e_time = time()
+
+        # Checks if there is an error happened while extracting the archive
+        if any(err in extractor for err in ERROR_MSGS):
+            try:
+                await query.message.edit(
+                    text=messages.get(
+                        file="callbacks", key="EXT_FAILED_TXT", user_id=uid
+                    )
+                )
+                shutil.rmtree(ext_files_dir)
+            except:
+                try:
+                    await query.message.delete()
+                except:
+                    pass
+
+                await unzip_bot.send_message(
+                    chat_id=query.message.chat.id,
+                    text=messages.get(
+                        file="callbacks", key="EXT_FAILED_TXT", user_id=uid
+                    ),
+                )
+                shutil.rmtree(ext_files_dir)
+
+            return
+
+        # Check if user was dumb 😐
+        paths = await get_files(path=ext_files_dir)
+
+        if not paths:
+            await unzip_bot.send_message(
+                chat_id=query.message.chat.id,
+                text=messages.get(
+                    file="callbacks", key="PASSWORD_PROTECTED", user_id=uid
+                ),
+            )
+            await answer_query(
+                query=query,
+                message_text=messages.get(
+                    file="callbacks", key="EXT_FAILED_TXT", user_id=uid
+                ),
+                unzip_client=unzip_bot,
+            )
+            shutil.rmtree(ext_files_dir)
+            return
+
+        # Upload extracted files
+        extrtime = TimeFormatter(round(number=ext_e_time - ext_s_time) * 1000)
+
+        if extrtime == "":
+            extrtime = "1s"
+        await answer_query(
+            query=query,
+            message_text=messages.get(
+                file="callbacks", key="EXT_OK_TXT", user_id=uid, extra_args=[extrtime]
+            ),
+            unzip_client=unzip_bot,
+        )
+
+        try:
+            i_e_buttons = await make_keyboard(
+                paths=paths,
+                user_id=user_id,
+                chat_id=query.message.chat.id,
+                unziphttp=False,
+            )
+
+            try:
+                await query.message.edit(
+                    text=messages.get(
+                        file="callbacks",
+                        key="CHOOSE_FILES_TXT",
+                        user_id=uid,
+                        extra_args=[len(paths)],
+                    ),
+                    reply_markup=i_e_buttons,
+                )
+            except:
+                await unzip_bot.send_message(
+                    chat_id=query.message.chat.id,
+                    text=messages.get(
+                        file="callbacks",
+                        key="CHOOSE_FILES_TXT",
+                        user_id=uid,
+                        extra_args=[len(paths)],
+                    ),
+                    reply_markup=i_e_buttons,
+                )
+
+        except Exception as e:
+            LOGGER.error(msg=f"Error in manual extraction: {e}")
+            await answer_query(
+                query=query,
+                message_text=f"Error during extraction: {str(e)}",
+                unzip_client=unzip_bot,
+            )
+
     elif query.data.startswith("merged"):
         user_id = query.from_user.id
         download_path = f"{Config.DOWNLOAD_LOCATION}/{user_id}/merge"

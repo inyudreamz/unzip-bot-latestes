@@ -81,6 +81,16 @@ class Buttons:
         ]
     )
 
+    MANUAL_EXTRACT_BTNS = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(text="🗂️", callback_data="manual_extract|no_pass"),
+                InlineKeyboardButton(text="🔐", callback_data="manual_extract|with_pass"),
+            ],
+            [InlineKeyboardButton(text="❌", callback_data="cancel_dis")],
+        ]
+    )
+
     CHOOSE_E_U__BTNS = InlineKeyboardMarkup(
         [
             [

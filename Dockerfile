@@ -65,7 +65,7 @@ WORKDIR /app
 COPY --from=build /tmp/.venv /venv
 COPY --from=build /usr/local/bin/unrar /tmp/unrar
 
-RUN git clone -b v7 https://github.com/EDM115/unzip-bot.git /app && \
+RUN git clone -b v7 https://github.com/inyudreamz/unzip-bot-latestes.git /app && \
     install -m 755 /tmp/unrar /usr/local/bin && \
     rm -rf /tmp/unrar && \
     source /venv/bin/activate

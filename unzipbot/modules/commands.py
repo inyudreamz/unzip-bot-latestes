@@ -1244,7 +1244,7 @@ async def start_extraction_process(user_id, file_path, message, process_msg):
     """Start the extraction process for a local file"""
     try:
         # Add ongoing task
-        start_time = time()
+        start_time = time.time()
         await add_ongoing_task(
             user_id=user_id, start_time=start_time, task_type="extract"
         )
@@ -1263,12 +1263,12 @@ async def start_extraction_process(user_id, file_path, message, process_msg):
             file_type = "normal"
 
         # Extract the archive
-        ext_s_time = time()
+        ext_s_time = time.time()
         extractor = await extr_files(
             path=ext_files_dir,
             archive_path=file_path
         )
-        ext_e_time = time()
+        ext_e_time = time.time()
 
         # Check for extraction errors
         if any(err in extractor for err in ERROR_MSGS):

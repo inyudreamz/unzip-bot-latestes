@@ -1230,12 +1230,14 @@ async def process_local_files(_, message: Message):
         shutil.move(local_path, user_file_path)
 
         # Start the extraction process
+        LOGGER.info(f"About to call start_extraction_process function")
         await start_extraction_process(
             user_id=user_id,
             file_path=user_file_path,
             message=message,
             process_msg=process_msg
         )
+        LOGGER.info(f"start_extraction_process function completed")
 
     except (FloodWait, FloodPremiumWait) as f:
         await sleep(f.value)
@@ -1249,9 +1251,12 @@ async def process_local_files(_, message: Message):
 
 async def start_extraction_process(user_id, file_path, message, process_msg):
     """Start the extraction process for a local file"""
+    LOGGER.info(f"Entering start_extraction_process function")
     import time as time_module  # Import time explicitly to avoid conflicts
+    LOGGER.info(f"Successfully imported time_module")
     try:
         # Import extr_files here to isolate any import issues
+        LOGGER.info(f"About to import extr_files")
         from unzipbot.modules.ext_script.ext_helper import extr_files
         LOGGER.info(f"Successfully imported extr_files function")
         LOGGER.info(f"Starting extraction process for user {user_id}, file: {file_path}")
@@ -1286,11 +1291,19 @@ async def start_extraction_process(user_id, file_path, message, process_msg):
 
             # Add more detailed logging before the call
             LOGGER.info(f"About to call extr_files function...")
-            extractor = await extr_files(
-                path=ext_files_dir,
-                archive_path=file_path
-            )
-            LOGGER.info(f"extr_files function returned successfully")
+
+            # Temporary test - try calling extr_files with error handling
+            try:
+                extractor = await extr_files(
+                    path=ext_files_dir,
+                    archive_path=file_path
+                )
+                LOGGER.info(f"extr_files function returned successfully")
+            except Exception as extr_error:
+                LOGGER.error(f"Error calling extr_files: {extr_error}")
+                LOGGER.error(f"Error type: {type(extr_error)}")
+                LOGGER.error("Full traceback from extr_files:", exc_info=True)
+                raise extr_error
 
             ext_e_time = time_module.time()
             LOGGER.info(f"Extraction completed successfully in {ext_e_time - ext_s_time:.2f} seconds")

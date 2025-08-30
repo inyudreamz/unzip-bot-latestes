@@ -23,7 +23,7 @@ COPY pyproject.toml /tmp/pyproject.toml
 COPY uv.lock /tmp/uv.lock
 COPY install_unrar.sh /tmp/install_unrar.sh
 
-RUN uv sync --no-cache --locked && \
+RUN uv sync --no-cache && \
     /tmp/install_unrar.sh
 
 FROM python:3.12-alpine
@@ -65,7 +65,7 @@ WORKDIR /app
 COPY --from=build /tmp/.venv /venv
 COPY --from=build /usr/local/bin/unrar /tmp/unrar
 
-RUN git clone -b v7 https://github.com/EDM115/unzip-bot.git /app && \
+RUN git clone -b v7 https://github.com/inyudreamz/unzip-bot-latestes.git /app && \
     install -m 755 /tmp/unrar /usr/local/bin && \
     rm -rf /tmp/unrar && \
     source /venv/bin/activate

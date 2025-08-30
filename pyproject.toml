@@ -13,7 +13,7 @@ dependencies = [
   "dnspython==2.7.0",
   "gitdb==4.0.12",
   "GitPython==3.1.44",
-  "motor==3.7.0",
+  "motor==3.7.1",
   "mutagen==1.47.0",
   "Pillow==11.2.1",
   "psutil==7.0.0",
@@ -61,6 +61,7 @@ split-on-trailing-comma = false
 [tool.uv]
 compile-bytecode = true
 link-mode = "copy"
+required-environments = ["platform_system == 'Linux' and platform_machine == 'x86_64'"]
 
 [tool.uv.pip]
 compile-bytecode = true

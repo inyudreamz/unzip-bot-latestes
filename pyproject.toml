@@ -61,6 +61,7 @@ split-on-trailing-comma = false
 [tool.uv]
 compile-bytecode = true
 link-mode = "copy"
+required-environments = ["platform_system == 'Linux' and platform_machine == 'x86_64'"]
 
 [tool.uv.pip]
 compile-bytecode = true

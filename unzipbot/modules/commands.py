@@ -11,7 +11,7 @@ from sys import executable
 import git
 import psutil
 from pyrogram import enums, filters
-from pyrogram.errors import FloodPremiumWait, FloodWait, RPCError
+from pyrogram.errors import FloodPremiumWait, FloodWait, RPCError, ReplyMarkupTooLong
 from pyrogram.types import Message
 
 from config import Config
@@ -40,11 +40,13 @@ from unzipbot.helpers.unzip_help import (
     calculate_memory_limit,
     humanbytes,
     timeformat_sec,
+    ERROR_MSGS,
+    TimeFormatter,
 )
 from unzipbot.i18n.buttons import Buttons
 from unzipbot.i18n.messages import Messages
 from unzipbot.modules.ext_script.custom_thumbnail import add_thumb, del_thumb
-from unzipbot.modules.ext_script.ext_helper import get_files
+from unzipbot.modules.ext_script.ext_helper import get_files, extr_files, make_keyboard, make_keyboard_empty
 
 # Regex for urls
 https_url_regex = r"((http|https)\:\/\/)?[a-zA-Z0-9\.\/\?\:@\-_=#]+\.([a-zA-Z]){2,6}([a-zA-Z0-9\.\&\/\?\:@\-_=#])*"  # noqa: E501
@@ -185,9 +187,9 @@ async def privacy_text(_, message: Message):
 
 @unzipbot_client.on_message(
     filters=filters.incoming
-    & filters.private
-    & (filters.document | filters.regex(pattern=https_url_regex))
-    & ~filters.command(commands=["eval", "exec"])
+            & filters.private
+            & (filters.document | filters.regex(pattern=https_url_regex))
+            & ~filters.command(commands=["eval", "exec"])
 )
 async def extract_archive(_, message: Message):
     try:
@@ -781,11 +783,11 @@ async def maintenance_mode(_, message: Message):
     mstatus = await get_maintenance()
     uid = message.from_user.id
     text = (
-        messages.get(
-            file="commands", key="MAINTENANCE", user_id=uid, extra_args=mstatus
-        )
-        + "\n\n"
-        + messages.get(file="commands", key="MAINTENANCE_ASK", user_id=uid)
+            messages.get(
+                file="commands", key="MAINTENANCE", user_id=uid, extra_args=mstatus
+            )
+            + "\n\n"
+            + messages.get(file="commands", key="MAINTENANCE_ASK", user_id=uid)
     )
     mess = await message.reply(text=text)
 
@@ -1132,3 +1134,212 @@ async def exec_command(_, message):
             )
     else:
         await message.reply_text(OUTPUT)
+
+
+@unzipbot_client.on_message(filters=filters.private & filters.command(commands="process_local") & filters.user(Config.BOT_OWNER))
+async def process_local_files(_, message: Message):
+    try:
+        user_id = message.from_user.id
+
+        # Check if user is in merge mode
+        if await get_merge_task(user_id):
+            await message.reply(
+                text=messages.get(
+                    file="commands", key="PROCESS_RUNNING", user_id=user_id
+                )
+            )
+            return
+
+        # Check if bot is still starting
+        if os.path.exists(Config.LOCKFILE):
+            await message.reply(
+                text=messages.get(
+                    file="commands", key="STILL_STARTING", user_id=user_id
+                )
+            )
+            return
+
+        # Check if user already has an ongoing task
+        download_path = f"{Config.DOWNLOAD_LOCATION}/{user_id}"
+        if os.path.isdir(download_path):
+            await message.reply(
+                text=messages.get(
+                    file="commands", key="PROCESS_RUNNING", user_id=user_id
+                )
+            )
+            return
+
+        # Get the local path from command arguments
+        try:
+            local_path = message.text.split(" ", maxsplit=1)[1]
+        except IndexError:
+            await message.reply(
+                text="Please provide the path to your archive file.\n\nUsage: `/process_local /path/to/your/archive.zip`\n\n**Note:** This command is admin-only for security reasons."
+            )
+            return
+
+        # Check if the file exists
+        if not os.path.exists(local_path):
+            await message.reply(
+                text=f"❌ File not found at: `{local_path}`\n\nPlease check the path and try again."
+            )
+            return
+
+        # Check if it's a file (not directory)
+        if not os.path.isfile(local_path):
+            await message.reply(
+                text=f"❌ The path `{local_path}` is not a file.\n\nPlease provide the path to an archive file."
+            )
+            return
+
+        # Check if it's a valid archive format
+        valid_extensions = ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.zst', '.001', '.002', '.003']
+        file_ext = os.path.splitext(local_path)[1].lower()
+        if not any(local_path.lower().endswith(ext) for ext in valid_extensions):
+            await message.reply(
+                text=f"❌ The file `{local_path}` doesn't appear to be a valid archive format.\n\nSupported formats: {', '.join(valid_extensions)}"
+            )
+            return
+
+        # Check disk space
+        file_size = os.path.getsize(local_path)
+        if not sufficient_disk_space(file_size):
+            await message.reply(
+                text=messages.get(file="commands", key="NO_SPACE", user_id=user_id)
+            )
+            return
+
+        # Create processing message
+        process_msg = await message.reply(
+            text=messages.get(file="commands", key="PROCESSING2", user_id=user_id),
+            reply_to_message_id=message.id,
+        )
+
+        # Create user directory
+        os.makedirs(name=download_path, exist_ok=True)
+
+        # Move the file to user's directory
+        import shutil
+        filename = os.path.basename(local_path)
+        user_file_path = f"{download_path}/{filename}"
+        shutil.move(local_path, user_file_path)
+
+        # Start the extraction process
+        await start_extraction_process(
+            user_id=user_id,
+            file_path=user_file_path,
+            message=message,
+            process_msg=process_msg
+        )
+
+    except (FloodWait, FloodPremiumWait) as f:
+        await sleep(f.value)
+        await process_local_files(_=_, message=message)
+    except Exception as e:
+        await message.reply(f"❌ Error: {str(e)}")
+        LOGGER.error(f"Error in process_local_files: {e}")
+
+
+async def start_extraction_process(user_id, file_path, message, process_msg):
+    """Start the extraction process for a local file"""
+    try:
+        # Add ongoing task
+        start_time = time()
+        await add_ongoing_task(
+            user_id=user_id, start_time=start_time, task_type="extract"
+        )
+
+        # Create extraction directory
+        ext_files_dir = f"{Config.DOWNLOAD_LOCATION}/{user_id}/extracted"
+        os.makedirs(name=ext_files_dir, exist_ok=True)
+
+        # Determine file type and extract
+        file_type = None
+        if file_path.endswith(".rar"):
+            file_type = "rar"
+        elif any(file_path.endswith(ext) for ext in [".001", ".002", ".003"]):
+            file_type = "volume"
+        else:
+            file_type = "normal"
+
+        # Extract the archive
+        ext_s_time = time()
+        extractor = await extr_files(
+            path=ext_files_dir,
+            archive_path=file_path
+        )
+        ext_e_time = time()
+
+        # Check for extraction errors
+        if any(err in extractor for err in ERROR_MSGS):
+            await process_msg.edit(
+                text=messages.get(
+                    file="callbacks", key="EXT_FAILED_TXT", user_id=user_id
+                )
+            )
+            shutil.rmtree(ext_files_dir)
+            shutil.rmtree(f"{Config.DOWNLOAD_LOCATION}/{user_id}")
+            await del_ongoing_task(user_id)
+            return
+
+        # Get extracted files
+        paths = await get_files(path=ext_files_dir)
+        if not paths:
+            await process_msg.edit(
+                text=messages.get(
+                    file="callbacks", key="PASSWORD_PROTECTED", user_id=user_id
+                )
+            )
+            shutil.rmtree(ext_files_dir)
+            shutil.rmtree(f"{Config.DOWNLOAD_LOCATION}/{user_id}")
+            await del_ongoing_task(user_id)
+            return
+
+        # File was moved, so no need to clean up original
+
+        # Calculate extraction time
+        extrtime = TimeFormatter(round(number=ext_e_time - ext_s_time) * 1000)
+        if extrtime == "":
+            extrtime = "1s"
+
+        # Show success message
+        await process_msg.edit(
+            text=messages.get(
+                file="callbacks", key="EXT_OK_TXT", user_id=user_id, extra_args=[extrtime]
+            )
+        )
+
+        # Create keyboard for file selection
+        try:
+            i_e_buttons = await make_keyboard(
+                paths=paths,
+                user_id=user_id,
+                chat_id=message.chat.id,
+                unziphttp=False,
+            )
+
+            await process_msg.edit(
+                text=messages.get(
+                    file="callbacks", key="SELECT_FILES", user_id=user_id
+                ),
+                reply_markup=i_e_buttons,
+            )
+        except ReplyMarkupTooLong:
+            empty_buttons = await make_keyboard_empty(
+                user_id=user_id, chat_id=message.chat.id, unziphttp=False
+            )
+            await process_msg.edit(
+                text=messages.get(
+                    file="callbacks", key="UNABLE_GATHER_FILES", user_id=user_id
+                ),
+                reply_markup=empty_buttons,
+            )
+
+    except Exception as e:
+        await process_msg.edit(f"❌ Extraction error: {str(e)}")
+        LOGGER.error(f"Error in start_extraction_process: {e}")
+        try:
+            shutil.rmtree(f"{Config.DOWNLOAD_LOCATION}/{user_id}")
+        except:
+            pass
+        await del_ongoing_task(user_id)
